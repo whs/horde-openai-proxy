@@ -1,16 +1,13 @@
 __all__ = [
     "openai_to_horde",
     "openai_to_horde_async",
-    "horde_to_openai",
     "get_horde_completion",
     "get_horde_completion_async",
     "completions_to_openai_response",
+    "completions_to_openai_response_async",
     "TextGeneration",
     "get_models",
     "Model",
-    "apply_template",
-    "get_generation_config",
-    "GenerationConfig",
     "ChatCompletionRequest",
     "HordeRequest",
     "ChatCompletionResponse",
@@ -21,7 +18,7 @@ __all__ = [
 
 from .conversion import (
     completions_to_openai_response,
-    horde_to_openai,
+    completions_to_openai_response_async,
     openai_to_horde,
     openai_to_horde_async,
 )
@@ -33,11 +30,6 @@ from .horde import (
     get_horde_models_async,
 )
 from .model import Model, get_models
-from .template import (
-    GenerationConfig,
-    apply_template,
-    get_generation_config,
-)
 from .types import (
     ChatCompletionRequest,
     ChatCompletionResponse,

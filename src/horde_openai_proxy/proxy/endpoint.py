@@ -1,3 +1,4 @@
+import logging
 from typing import List
 
 from fastapi import FastAPI, HTTPException, Request
@@ -9,46 +10,43 @@ from horde_openai_proxy import (
     openai_to_horde_async,
     completions_to_openai_response,
     get_horde_completion_async,
+    completions_to_openai_response_async,
 )
-from horde_openai_proxy.utils import filter_models
+
+from horde_openai_proxy.model import get_models_async
 
 app = FastAPI()
+logger = logging.getLogger(__name__)
 
 
 @app.get("/v1/chat/models")
-async def get_chat_models(
-    names: str = "",
-    clean_names: str = "",
-    base_models: str = "",
-    templates: str = "",
-    min_size: float = 0,
-    max_size: float = -1,
-    quant: str = "",
-    backends: str = "",
-) -> List[Model]:
-    return await filter_models(
-        set(n.strip() for n in names.split(",") if n.strip()),
-        set(n.strip() for n in clean_names.split(",") if n.strip()),
-        set(n.strip() for n in base_models.split(",") if n.strip()),
-        set(n.strip() for n in templates.split(",") if n.strip()),
-        set(n.strip() for n in backends.split(",") if n.strip()),
-        set(n.strip() for n in quant.split(",") if n.strip()),
-        min_size=min_size,
-        max_size=max_size,
-    )
+async def get_chat_models() -> List[Model]:
+    # TODO: Check openai spec
+    return list((await get_models_async()).values())
 
 
 @app.post("/v1/chat/completions")
 async def post_chat_completion(
     request: Request, body: ChatCompletionRequest
 ) -> ChatCompletionResponse:
-    token = request.headers["authorization"].lstrip("Bearer ").lstrip("sk-")
+    token = (
+        request.headers.get("authorization", "0000000000")
+        .lstrip("Bearer ")
+        .lstrip("sk-")
+    )
 
     try:
         horde_request = await openai_to_horde_async(body)
-        # TODO: Pass req params into this
-        completions = await get_horde_completion_async(token, horde_request)
+        completions = await get_horde_completion_async(
+            token,
+            horde_request,
+            trusted_workers=body.trusted_workers,
+            validated_backends=body.validated_backends,
+            slow_workers=body.slow_workers,
+            allow_downgrade=body.allow_downgrade,
+        )
     except ValueError as e:
+        logging.warning("Request error", exc_info=e)
         raise HTTPException(status_code=406, detail=str(e))
 
-    return completions_to_openai_response(completions)
+    return await completions_to_openai_response_async(completions, horde_request.prompt)
