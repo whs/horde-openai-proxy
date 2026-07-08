@@ -1,3 +1,0 @@
-[submodule "src/horde_openai_proxy/chat_templates"]
-	path = src/horde_openai_proxy/chat_templates
-	url = https://github.com/chujiezheng/chat_templates.git

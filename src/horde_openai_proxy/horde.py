@@ -17,9 +17,14 @@ def remove_stop_words(text: str, stop_sequence: List[str]) -> str:
     :param stop_sequence: The stop sequence to remove.
     :return:
     """
-    for stop_word in stop_sequence:
-        text = text.rstrip(stop_word)
-    return text
+    while True:
+        removed = False
+        for stop_word in stop_sequence:
+            text = text.removesuffix(stop_word)
+            removed = True
+
+        if not removed:
+            return text
 
 
 def get_data(response: httpx.Response):
@@ -87,32 +92,27 @@ async def get_horde_completion_async(
                 raise ValueError("Request is not possible.")
 
             if data["faulted"]:
-                raise ValueError("Request is not possible.")
+                raise ValueError("Request errored.")
 
-            if data["done"]:
-                if len(data["generations"]) < (
-                    1 if request.params.n is None else request.params.n
-                ):
-                    raise ValueError("Not enough generations.")
+            if not data["done"]:
+                await asyncio.sleep(0.5)
+                continue
 
-                # Parse the generations
-                generations = []
-                for generation in data["generations"]:
-                    text = remove_stop_words(
-                        generation["text"],
-                        request.params.stop_sequence,
+            if len(data["generations"]) < request.params.n:
+                raise ValueError("Not enough generations.")
+
+            # Parse the generations
+            generations = []
+            for generation in data["generations"]:
+                generations.append(
+                    TextGeneration(
+                        uuid=str(uuid),
+                        model=generation["model"],
+                        text=generation["text"],
+                        kudos=data["kudos"],
                     )
-                    generations.append(
-                        TextGeneration(
-                            uuid=str(uuid),
-                            model=generation["model"],
-                            text=text,
-                            kudos=data["kudos"],
-                        )
-                    )
-                return generations
-
-            await asyncio.sleep(0.5)
+                )
+            return generations
 
         raise ValueError("Request timed out.")
 

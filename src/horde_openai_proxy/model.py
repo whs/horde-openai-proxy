@@ -1,3 +1,4 @@
+import re
 import asyncio
 from dataclasses import dataclass
 from typing import Optional
@@ -6,116 +7,62 @@ import httpx
 from cachetools import TTLCache
 from cachetools_async import cached as cached_async
 
-from .data import MODEL_SIZES, MODEL_TO_BASE_MODEL, BASE_MODELS
 from .horde import get_horde_models_async
-from .types import HordeModelInfo
+from .types import HordeModelInfoResponse
 
-QUANTS = {
-    "q2_k",
-    "q3_k_s",
-    "q3_k_m",
-    "q3_k_l",
-    "q4_0",
-    "q4_k_s",
-    "q4_k_m",
-    "q5_0",
-    "q5_k_s",
-    "q5_k_m",
-    "q6_k",
-    "q8_0",
-    # I-Quants
-    "iq1_m",
-    "iq2_m",
-    "iq2_s",
-    "iq2_xs",
-    "iq2_xxs",
-    "iq3_m",
-    "iq3_xs",
-    "iq4_xs",
-}
-
-IGNORED_WORDS = {"GGUF"}
+KNOWN_ENGINES = {"aphrodite", "koboldcpp"}
+QUANTS_RE = re.compile(r"(-)*(([i]*q[1-9](_[k0])*(_[x]*[sml])*)|f[48])(-)*", re.I)
 
 
-def estimate_clean_name(name: str) -> str:
-    """Estimate the clean name of a model, without quant, size, backend, ..."""
-    name = name.split("/")[-1]
-    filtered = []
-    for part in name.split("-"):
-        if len(part) <= 4 and part.lower().endswith("b"):
-            continue
-        if part.lower() in QUANTS:
-            continue
-        if part.lower() in IGNORED_WORDS:
-            continue
-        filtered.append(part)
-    return "-".join(filtered)
+def estimate_hf_url(
+    name: str, references: Optional[HordeModelInfoResponse] = None
+) -> str:
+    if references is not None and name in references.root:
+        url = references.root[name].url
+        if url is not None and url.startswith("https://huggingface.co/"):
+            return url
 
+    name_no_quant = QUANTS_RE.sub("", name, 1)
+    if name_no_quant != name:
+        return estimate_hf_url(name_no_quant, references)
+    if name_no_quant.count("_") == 1:
+        # kobold likes to replace / with _, but the quant has _
+        return estimate_hf_url(name_no_quant.replace("_", "/"))
 
-def estimate_quant(name: str) -> str:
-    """Estimate the quantization of a model based on the name."""
-    name = name.lower()
-    for q in QUANTS:
-        if q in name:
-            return q
-    return "full"
+    parts = name_no_quant.split("/")
+    if len(parts) == 3 or parts[0] in KNOWN_ENGINES:
+        # If the name is engine/user/model_name then try this algorithm again with just user/model_name
+        return estimate_hf_url("/".join(parts[1:]), references)
 
+    if len(parts) == 2:
+        return f"https://huggingface.co/{parts[0]}/{parts[1]}"
 
-def estimate_size(name: str) -> float:
-    """Estimate the size of a model based on the name."""
-    short_name = name.split("/")[-1]
-    if name in MODEL_SIZES:
-        return MODEL_SIZES[name]
-    if short_name in MODEL_SIZES:
-        return MODEL_SIZES[short_name]
-    for segment in name.lower().split("-"):
-        for s in segment.split("."):
-            if s.endswith("b"):
-                try:
-                    return float(s[:-1])
-                except ValueError:
-                    pass
-    print(f"Unknown size: {name}")
-    return 0
-
-
-def guess_base_model(name: str) -> Optional[str]:
-    """Guess the base model of a model based on the name."""
-    name = name.lower()
-    if name in MODEL_TO_BASE_MODEL:
-        return MODEL_TO_BASE_MODEL[name]
-    for k, v in MODEL_TO_BASE_MODEL.items():
-        if k in name:
-            return v
     return None
 
 
 @dataclass
 class Model:
     name: str
-    clean_name: str
-    base_model: str
-    template: str
-    backend: str
-    quant: str
-    size: float
+    hf_url: str
     known_to_horde: bool
 
 
-def get_references() -> dict[str, HordeModelInfo]:
+def get_references() -> HordeModelInfoResponse:
     """The references are known models, with usually more accurate information than the guesses."""
     return asyncio.run(get_references_async())
 
 
 @cached_async(TTLCache(maxsize=1, ttl=86400))
-async def get_references_async() -> dict[str, HordeModelInfo]:
+async def get_references_async() -> HordeModelInfoResponse:
     """The references are known models, with usually more accurate information than the guesses."""
     async with httpx.AsyncClient() as client:
-        return (
-            await client.get(
-                "https://raw.githubusercontent.com/db0/AI-Horde-text-model-reference/main/db.json"
-            )
-        ).json()
+        return HordeModelInfoResponse.parse_obj(
+            (
+                await client.get(
+                    "https://raw.githubusercontent.com/db0/AI-Horde-text-model-reference/main/db.json"
+                )
+            ).json()
+        )
 
 
 def get_models() -> dict[str, Model]:
@@ -138,29 +85,19 @@ async def get_models_async() -> dict[str, Model]:
     for model in server_models:
         name = model["name"]
         if "/" in name:
-            reference = references.get(name, {})
-            backend = name.split("/", 1)[0].strip()
-            clean_name = estimate_clean_name(name).strip()
-            base_model = guess_base_model(clean_name)
-            template = (
-                BASE_MODELS[base_model]["template"]
-                if base_model in BASE_MODELS
-                else "unknown"
-            )
+            hf_url = estimate_hf_url(name, references)
 
-            if base_model is None:
-                print(f"Unknown model: {clean_name} ({name}), ignoring.")
+            if hf_url is None:
+                print(f"Unknown model: {name}, ignoring.")
             else:
                 models[name] = Model(
                     name=name,
-                    clean_name=clean_name,
-                    base_model=base_model,
-                    template=template,
-                    backend=backend,
-                    quant=estimate_quant(name),
-                    size="parameters" in reference
-                    and reference["parameters"] / 10**9
-                    or estimate_size(name),
-                    known_to_horde="name" in reference,
+                    hf_url=hf_url,
+                    known_to_horde=name in references.root,
                 )
     return models
+
+
+async def get_model(name: str) -> Optional[Model]:
+    models = await get_models_async()
+    return models.get(name, None)

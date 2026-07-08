@@ -1,6 +1,6 @@
 from typing import Any, Optional, Union, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel
 
 
 class ChatCompletionRequest(BaseModel):
@@ -8,16 +8,23 @@ class ChatCompletionRequest(BaseModel):
 
     model_config = {"extra": "ignore"}
 
-    messages: list[dict]
+    messages: list[dict] = Field(min_length=1)
     model: str
+    tools: Optional[list[dict]] = Field(None)
     frequency_penalty: Optional[float] = Field(None)
     presence_penalty: Optional[float] = Field(None)
-    max_tokens: Optional[int] = Field(None)
-    n: Optional[int] = Field(None)
-    stop: List[str] = Field(None)
+    max_tokens: int = Field(512)
+    n: Optional[int] = Field(1)
+    stop: List[str] = Field(default_factory=list)
     temperature: Optional[float] = Field(None)
     top_p: Optional[float] = Field(None)
-    timeout: Union[float, None] = Field(None)
+    timeout: int = Field(300)
+
+    # Custom params
+    trusted_workers: bool = Field(False)
+    validated_backends: bool = Field(False)
+    slow_workers: bool = Field(True)
+    allow_downgrade: bool = Field(False)
 
 
 class ChatCompletionResponse(BaseModel):
@@ -37,7 +44,7 @@ class ModelGenerationInput(BaseModel):
 
     max_context_length: int = 2048
     max_length: Optional[int] = 512
-    n: Optional[int] = None
+    n: Optional[int] = 1
     rep_pen: Optional[float] = None
     stop_sequence: List[str] = []
     temperature: Optional[float] = None
@@ -85,3 +92,6 @@ class HordeModelInfo(BaseModel):
     instruct_format: Optional[str] = None
     tags: list[str] = []
     settings: dict[str, Any] = {}
+
+
+HordeModelInfoResponse = RootModel[dict[str, HordeModelInfo]]
