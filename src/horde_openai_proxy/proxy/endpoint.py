@@ -9,12 +9,10 @@ from horde_openai_proxy import (
     ChatCompletionResponse,
     Model,
     openai_to_horde_async,
-    completions_to_openai_response,
     get_horde_completion_async,
     completions_to_openai_response_async,
 )
 from horde_openai_proxy.horde import get_horde_workers
-
 from horde_openai_proxy.model import (
     get_models_async,
     get_references_async,
