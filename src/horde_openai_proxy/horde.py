@@ -5,7 +5,7 @@ from typing import List
 
 import httpx
 
-from .types import HordeRequest, TextGeneration
+from .types import HordeRequest, TextGeneration, HordeWorkerListResponse
 
 HORDE_HOST = "https://stablehorde.net/api/"
 
@@ -140,5 +140,24 @@ async def get_horde_models_async() -> List[dict]:
                     "type": "text",
                     "min_count": 1,
                 },
+            )
+        )
+
+
+async def get_horde_workers() -> HordeWorkerListResponse:
+    """
+    Get the models available on the StableHorde API.
+    :return: List of models.
+    :raises ValueError
+    """
+    async with httpx.AsyncClient(base_url=HORDE_HOST) as client:
+        return HordeWorkerListResponse.parse_obj(
+            get_data(
+                await client.get(
+                    "v2/workers",
+                    params={
+                        "type": "text",
+                    },
+                )
             )
         )

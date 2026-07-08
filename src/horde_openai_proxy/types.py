@@ -1,40 +1,6 @@
-from typing import Any, Optional, Union, List
+from typing import Any, Optional, List, Literal, Union
 
 from pydantic import BaseModel, Field, RootModel
-
-
-class ChatCompletionRequest(BaseModel):
-    """An OpenAI Chat Completion request."""
-
-    model_config = {"extra": "ignore"}
-
-    messages: list[dict] = Field(min_length=1)
-    model: str
-    tools: Optional[list[dict]] = Field(None)
-    frequency_penalty: Optional[float] = Field(None)
-    presence_penalty: Optional[float] = Field(None)
-    max_tokens: int = Field(512)
-    n: Optional[int] = Field(1)
-    stop: List[str] = Field(default_factory=list)
-    temperature: Optional[float] = Field(None)
-    top_p: Optional[float] = Field(None)
-    timeout: int = Field(300)
-
-    # Custom params
-    trusted_workers: bool = Field(False)
-    validated_backends: bool = Field(False)
-    slow_workers: bool = Field(True)
-    allow_downgrade: bool = Field(False)
-
-
-class ChatCompletionResponse(BaseModel):
-    """An OpenAI Chat Completion response."""
-
-    id: str
-    choices: list[dict]
-    created: int
-    model: str
-    usage: dict
 
 
 class ModelGenerationInput(BaseModel):
@@ -95,3 +61,41 @@ class HordeModelInfo(BaseModel):
 
 
 HordeModelInfoResponse = RootModel[dict[str, HordeModelInfo]]
+
+
+class HordeWorkerInfo(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    type: Union[Literal["text"], Literal["image"], Literal["interrogation"]]
+    name: str
+    id: str
+    online: bool
+    requests_fulfilled: int
+    kudos_rewards: int
+    performance: str
+    threads: int
+    uptime: float
+    maintenance_mode: bool
+    info: Optional[str] = None
+    nsfw: bool
+    owner: Optional[str] = None
+    trusted: bool
+    flagged: bool
+    uncompleted_jobs: int
+    models: List[str]
+    forms: Optional[List[str]] = None
+    bridge_agent: str
+    max_pixels: Optional[int] = None
+    megapixelsteps_generated: Optional[float] = None
+    img2img: Optional[bool] = None
+    painting: Optional[bool] = None
+    post_processing: Optional[bool] = Field(None, alias="post-processing")
+    lora: Optional[bool] = None
+    controlnet: Optional[bool] = None
+    sdxl_controlnet: Optional[bool] = None
+    max_length: int
+    max_context_length: int
+    tokens_generated: Optional[int] = None
+
+
+HordeWorkerListResponse = RootModel[list[HordeWorkerInfo]]
