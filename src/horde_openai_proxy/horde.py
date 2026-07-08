@@ -1,10 +1,13 @@
+import asyncio
 import time
 from json import JSONDecodeError
 from typing import List
 
-import requests
+import httpx
 
 from .types import HordeRequest, TextGeneration
+
+HORDE_HOST = "https://stablehorde.net/api/"
 
 
 def remove_stop_words(text: str, stop_sequence: List[str]) -> str:
@@ -19,7 +22,7 @@ def remove_stop_words(text: str, stop_sequence: List[str]) -> str:
     return text
 
 
-def get_data(response: requests.Response):
+def get_data(response: httpx.Response):
     if response.status_code != 200 and response.status_code != 202:
         try:
             message = response.json().get("message")
@@ -29,12 +32,16 @@ def get_data(response: requests.Response):
     return response.json()
 
 
-def get_horde_completion(
+def get_horde_completion(*args, **kwargs) -> List[TextGeneration]:
+    return asyncio.run(get_horde_completion_async(*args, **kwargs))
+
+
+async def get_horde_completion_async(
     apikey: str,
     request: HordeRequest,
     *,
     trusted_workers: bool = False,
-    validated_backends: bool = True,
+    validated_backends: bool = False,
     slow_workers: bool = True,
     allow_downgrade: bool = False,
 ) -> List[TextGeneration]:
@@ -50,65 +57,64 @@ def get_horde_completion(
     :return: List of TextGeneration
     :raises ValueError
     """
-    initial_request = get_data(
-        requests.post(
-            "https://stablehorde.net/api/v2/generate/text/async",
-            headers={
-                "apikey": apikey,
-            },
-            json={
-                "prompt": request.prompt,
-                "models": request.models,
-                "params": request.params.model_dump(exclude_none=True),
-                "trusted_workers": trusted_workers,
-                "validated_backends": validated_backends,
-                "slow_workers": slow_workers,
-                "allow_downgrade": allow_downgrade,
-            },
-        )
-    )
-
-    uuid = initial_request["id"]
-
-    # Await the completion
-    initial_time = time.time()
-    while time.time() - initial_time < request.timeout:
-        data = get_data(
-            requests.get(f"https://stablehorde.net/api/v2/generate/text/status/{uuid}")
+    async with httpx.AsyncClient(base_url=HORDE_HOST) as client:
+        initial_request = get_data(
+            await client.post(
+                "v2/generate/text/async",
+                headers={
+                    "apikey": apikey,
+                },
+                json={
+                    "prompt": request.prompt,
+                    "models": request.models,
+                    "params": request.params.model_dump(exclude_none=True),
+                    "trusted_workers": trusted_workers,
+                    "validated_backends": validated_backends,
+                    "slow_workers": slow_workers,
+                    "allow_downgrade": allow_downgrade,
+                },
+            )
         )
 
-        if not data["is_possible"]:
-            raise ValueError("Request is not possible.")
+        uuid = initial_request["id"]
 
-        if data["faulted"]:
-            raise ValueError("Request is not possible.")
+        # Await the completion
+        initial_time = time.time()
+        while time.time() - initial_time < request.timeout:
+            data = get_data(await client.get(f"v2/generate/text/status/{uuid}"))
 
-        if data["done"]:
-            if len(data["generations"]) < (
-                1 if request.params.n is None else request.params.n
-            ):
-                raise ValueError("Not enough generations.")
+            if not data["is_possible"]:
+                raise ValueError("Request is not possible.")
 
-            # Parse the generations
-            generations = []
-            for generation in data["generations"]:
-                text = remove_stop_words(
-                    generation["text"],
-                    request.params.stop_sequence,
-                )
-                generations.append(
-                    TextGeneration(
-                        uuid=str(uuid),
-                        model=generation["model"],
-                        text=text,
-                        kudos=data["kudos"],
+            if data["faulted"]:
+                raise ValueError("Request is not possible.")
+
+            if data["done"]:
+                if len(data["generations"]) < (
+                    1 if request.params.n is None else request.params.n
+                ):
+                    raise ValueError("Not enough generations.")
+
+                # Parse the generations
+                generations = []
+                for generation in data["generations"]:
+                    text = remove_stop_words(
+                        generation["text"],
+                        request.params.stop_sequence,
                     )
-                )
-            return generations
-        else:
-            time.sleep(0.5)
+                    generations.append(
+                        TextGeneration(
+                            uuid=str(uuid),
+                            model=generation["model"],
+                            text=text,
+                            kudos=data["kudos"],
+                        )
+                    )
+                return generations
 
-    raise ValueError("Request timed out.")
+            await asyncio.sleep(0.5)
+
+        raise ValueError("Request timed out.")
 
 
 def get_horde_models() -> List[dict]:
@@ -117,12 +123,22 @@ def get_horde_models() -> List[dict]:
     :return: List of models.
     :raises ValueError
     """
-    return get_data(
-        requests.get(
-            "https://stablehorde.net/api/v2/status/models",
-            params={
-                "type": "text",
-                "min_count": 1,
-            },
+    return asyncio.run(get_horde_models_async())
+
+
+async def get_horde_models_async() -> List[dict]:
+    """
+    Get the models available on the StableHorde API.
+    :return: List of models.
+    :raises ValueError
+    """
+    async with httpx.AsyncClient(base_url=HORDE_HOST) as client:
+        return get_data(
+            await client.get(
+                "v2/status/models",
+                params={
+                    "type": "text",
+                    "min_count": 1,
+                },
+            )
         )
-    )

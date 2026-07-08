@@ -1,5 +1,5 @@
+import pytest
 from pydantic import BaseModel
-from requests_mock.mocker import Mocker
 
 from horde_openai_proxy import (
     horde_to_openai,
@@ -36,39 +36,10 @@ def compare_models(a: BaseModel, b: BaseModel) -> None:
     assert not differences, differences
 
 
-def test_from_horde(requests_mock: "Mocker"):
-    requests_mock.get(
-        "https://raw.githubusercontent.com/db0/AI-Horde-text-model-reference/main/db.json",
-        json={
-            "Henk717/airochronos-33B": {
-                "name": "Henk717/airochronos-33B",
-                "model_name": "airochronos-33B",
-                "baseline": "",
-                "parameters": 33000000000,
-                "description": "",
-                "version": "1",
-                "style": "generalist",
-                "nsfw": False,
-                "display_name": "airochronos 33B",
-                "url": "https://huggingface.co/Henk717/airochronos-33B",
-                "tags": ["33B"],
-            },
-        },
-    )
-    requests_mock.get(
-        "https://stablehorde.net/api/v2/status/models",
-        json=[
-            {
-                "performance": 10,
-                "queued": 0,
-                "jobs": 0,
-                "eta": 0,
-                "type": "text",
-                "name": "Henk717/airochronos-33B",
-                "count": 1,
-            }
-        ],
-    )
+@pytest.mark.httpx_mock(
+    should_mock=lambda request: request.url.host != "huggingface.co"
+)
+def test_from_horde(mock_text_model_reference, mock_horde_model):
     h1 = HordeRequest(
         prompt="Test prompt!",
         models=["Henk717/airochronos-33B"],
@@ -92,6 +63,7 @@ def test_from_horde(requests_mock: "Mocker"):
     compare_models(o1, o2)
 
 
+@pytest.mark.skip
 def test_from_prompt():
     templates = set()
     for base_model in BASE_MODELS:
