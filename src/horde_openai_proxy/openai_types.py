@@ -13,7 +13,7 @@ class ChatCompletionRequest(BaseModel):
     tools: Optional[list[dict]] = Field(None)
     frequency_penalty: Optional[float] = Field(None)
     presence_penalty: Optional[float] = Field(None)
-    max_tokens: int = Field(512)
+    max_tokens: int = Field(512, lt=10241)
     n: Optional[int] = Field(1)
     stop: List[str] = Field(default_factory=list)
     temperature: Optional[float] = Field(None)

@@ -4,6 +4,8 @@ from json import JSONDecodeError
 from typing import List
 
 import httpx
+from cachetools import TTLCache
+from cachetools_async import cached as cached_async
 
 from .types import HordeRequest, TextGeneration, HordeWorkerListResponse
 
@@ -114,8 +116,11 @@ async def get_horde_completion_async(
                 )
             return generations
 
-        raise ValueError("Request timed out.")
+        raise TimeoutException()
 
+class TimeoutException(Exception):
+    def __init__(self):
+        super().__init__("Request timed out")
 
 def get_horde_models() -> List[dict]:
     """
@@ -144,6 +149,7 @@ async def get_horde_models_async() -> List[dict]:
         )
 
 
+@cached_async(TTLCache(maxsize=1, ttl=3600))
 async def get_horde_workers() -> HordeWorkerListResponse:
     """
     Get the models available on the StableHorde API.

@@ -7,7 +7,8 @@ import httpx
 from cachetools import TTLCache
 from cachetools_async import cached as cached_async
 
-from .horde import get_horde_models_async
+from .horde import get_horde_models_async, get_horde_workers
+from .openai_types import ModelTopProvider
 from .types import HordeModelInfoResponse
 
 KNOWN_ENGINES = {"aphrodite", "koboldcpp"}
@@ -101,3 +102,25 @@ async def get_models_async() -> dict[str, Model]:
 async def get_model(name: str) -> Optional[Model]:
     models = await get_models_async()
     return models.get(name, None)
+
+async def get_model_best_worker(model: str) -> Optional[ModelTopProvider]:
+    workers = await get_horde_workers()
+
+    out: Optional[ModelTopProvider] = None
+    for worker in workers.root:
+        if model not in worker.models:
+            continue
+
+        my_provider = ModelTopProvider(
+            name=worker.name,
+            context_length=max(0, worker.max_context_length - worker.max_length),
+            max_completion_tokens=worker.max_length,
+        )
+
+        if out:
+            if out.context_length < my_provider.context_length:
+                out = my_provider
+        else:
+            out = my_provider
+
+    return out

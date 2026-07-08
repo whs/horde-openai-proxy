@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import List
 
 from fastapi import FastAPI, HTTPException, Request
@@ -17,6 +18,8 @@ from horde_openai_proxy.model import (
     get_models_async,
     get_references_async,
     estimate_hf_url,
+    get_model,
+    get_model_best_worker,
 )
 from horde_openai_proxy.openai_types import (
     ModelArchitecture,
@@ -26,6 +29,7 @@ from horde_openai_proxy.openai_types import (
     ModelTopProvider,
     OpenAIModel,
 )
+from horde_openai_proxy.template import get_tokenizer
 
 app = FastAPI()
 logger = logging.getLogger(__name__)
@@ -117,18 +121,64 @@ async def post_chat_completion(
         .lstrip("sk-")
     )
 
+    completions = None
+    completion_so_far = ""
+    completed_tokens = 0
+    can_use_splitting = body.n == 1 and not body.allow_downgrade and "," not in body.model
     try:
         horde_request = await openai_to_horde_async(body)
-        completions = await get_horde_completion_async(
-            token,
-            horde_request,
-            trusted_workers=body.trusted_workers,
-            validated_backends=body.validated_backends,
-            slow_workers=body.slow_workers,
-            allow_downgrade=body.allow_downgrade,
-        )
+        timeout = time.time() + horde_request.timeout
+
+        for _ in range(10):
+            if can_use_splitting:
+                best_worker = await get_model_best_worker(horde_request.models[0])
+                if best_worker:
+                    if completions is not None:
+                        horde_request.prompt += completions[0].text
+                    horde_request.params.max_length = min(body.max_tokens - completed_tokens, best_worker.max_completion_tokens)
+                    # XXX: We currently do not splice prompts to bypass max_context_length_limit
+                    horde_request.timeout = timeout - time.time()
+                    if horde_request.timeout <= 0:
+                        break
+                else:
+                    can_use_splitting = False
+            
+            completions = await get_horde_completion_async(
+                token,
+                horde_request,
+                trusted_workers=body.trusted_workers,
+                validated_backends=body.validated_backends,
+                slow_workers=body.slow_workers,
+                allow_downgrade=body.allow_downgrade,
+            )
+
+            if not can_use_splitting:
+                break
+
+            completion_so_far += completions[0].text
+
+            model_info = await get_model(completions[0].model)
+            # All models are guaranteed by openai_to_horde_async to have hf_url
+            tokenizer = await asyncio.to_thread(get_tokenizer, model_info.hf_url)
+
+            completion_tokens = len(tokenizer.encode(completions[0].text))
+            completed_tokens += completion_tokens
+
+            # We get more or less than requested tokens, so it's not capping
+            if completion_tokens != horde_request.params.max_length:
+                break
+            # We got the tokens requested
+            if completed_tokens >= body.max_tokens:
+                break
     except ValueError as e:
         logging.warning("Request error", exc_info=e)
-        raise HTTPException(status_code=406, detail=str(e))
+        if completions is None:
+            raise HTTPException(status_code=406, detail=str(e))
+    except TimeoutError:
+        if completions is None:
+            raise HTTPException(status_code=504, detail="Request timed out")
+
+    if len(completion_so_far) > 0 and len(completions) == 1:
+        completions[0].text = completion_so_far
 
     return await completions_to_openai_response_async(completions, horde_request.prompt)
