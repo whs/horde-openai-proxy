@@ -31,8 +31,7 @@ from .horde import (
 )
 from .model import Model, get_models
 from .types import (
-    ChatCompletionRequest,
-    ChatCompletionResponse,
     HordeRequest,
     ModelGenerationInput,
 )
+from .openai_types import ChatCompletionRequest, ChatCompletionResponse

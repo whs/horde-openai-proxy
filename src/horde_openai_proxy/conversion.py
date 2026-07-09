@@ -9,12 +9,11 @@ from .template import (
     get_tokenizer,
 )
 from .types import (
-    ChatCompletionRequest,
     HordeRequest,
     ModelGenerationInput,
     TextGeneration,
-    ChatCompletionResponse,
 )
+from .openai_types import ChatCompletionRequest, ChatCompletionResponse
 
 
 def openai_to_horde(*args, **kwargs) -> HordeRequest:
