@@ -1,6 +1,8 @@
 import asyncio
+import json
 import time
 from typing import List, cast, Optional
+from uuid import uuid4
 
 from .model import get_model
 from .template import (
@@ -127,7 +129,7 @@ async def completions_to_openai_response_async(
                 {
                     "finish_reason": "stop",
                     "index": index,
-                    "message": completion,
+                    "message": _fix_response(completion),
                 }
                 for index, completion in enumerate(
                     tokenizer.parse_response(
@@ -158,3 +160,18 @@ async def completions_to_openai_response_async(
             "kudos": completions[0].kudos,
         },
     )
+
+def _fix_response(resp: dict) -> dict:
+    if "content" not in resp:
+        resp["content"] = None
+
+    for tool in resp.get("tool_calls", []):
+        if "id" not in tool:
+            # Tool call should have ID
+            tool["id"] = str(uuid4())
+        if tool.get("type", None) == "function" and "function" in tool:
+            # Function arguments must be JSON string and not decoded JSON
+            if "arguments" in tool["function"] and not isinstance(tool["function"]["arguments"], str):
+                tool["function"]["arguments"] = json.dumps(tool["function"]["arguments"])
+
+    return resp
