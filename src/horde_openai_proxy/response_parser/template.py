@@ -139,6 +139,10 @@ qwen3_template = {
                 "function": {"name": "{name}", "arguments": "{content}"},
             },
         },
+        "content": {
+            "close": "<|im_end|>",
+            "content": "text",
+        },
     },
 }
 

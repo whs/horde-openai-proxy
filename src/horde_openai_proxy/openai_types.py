@@ -150,10 +150,12 @@ class ChatCompletionAssistantMessage(ChatCompletionMessage):
 
     @model_validator(mode="after")
     def migrate_thinking_reasoning(self) -> Self:
-        if self.reasoning_details is None and self.thinking:
+        if self.reasoning_details in (None, MISSING) and self.thinking not in (None, MISSING):
             self.reasoning_details = [
                 ChatCompletionReasoningDetails(text=self.thinking)
             ]
+        elif self.thinking in (None, MISSING) and isinstance(self.reasoning_details, list) and len(self.reasoning_details) > 0:
+            self.thinking = self.reasoning_details[0].text
         return self
 
 
@@ -271,7 +273,7 @@ class ChatCompletionStreamingChunkChoiceDelta(BaseModel):
 
     @model_validator(mode="after")
     def migrate_thinking_reasoning(self) -> Self:
-        if self.reasoning_details in (MISSING, None) and self.thinking:
+        if self.reasoning_details in (MISSING, None) and self.thinking not in (MISSING, None):
             self.reasoning_details = [
                 ChatCompletionReasoningDetails(text=self.thinking)
             ]
