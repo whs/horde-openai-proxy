@@ -5,7 +5,9 @@ from horde_openai_proxy.types import HordeModelInfo
 from . import template
 
 
-def get_model_response_template(model: str, reference: Optional[HordeModelInfo] = None) -> Optional[dict]:
+def get_model_response_template(
+    model: str, reference: Optional[HordeModelInfo] = None
+) -> Optional[dict]:
     lower_model = model.lower()
     lower_base_model = ""
 

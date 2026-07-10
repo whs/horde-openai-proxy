@@ -48,7 +48,9 @@ async def openai_to_horde_async(
 
         # FIXME: We could get_tokenizer in parallel to speedup lookups, but model_names should be sequential
         try:
-            tokenizer = await asyncio.to_thread(get_tokenizer, model_info.hf_url, model_info.reference)
+            tokenizer = await asyncio.to_thread(
+                get_tokenizer, model_info.hf_url, model_info.reference
+            )
         except Exception:  # TODO: Pokemon
             raise ValueError(f"Model {model_name} not known")
 
@@ -124,7 +126,9 @@ async def completions_to_openai_response_async(
 
     parsed_responses = None
     if model is not None and model.hf_url is not None:
-        tokenizer = await asyncio.to_thread(get_tokenizer, model.hf_url, model.reference)
+        tokenizer = await asyncio.to_thread(
+            get_tokenizer, model.hf_url, model.reference
+        )
         prompt_prefix = prompt
         if getattr(tokenizer, "response_template", None) is None:
             prompt_prefix = None
@@ -144,7 +148,7 @@ async def completions_to_openai_response_async(
             ]
 
             for response in parsed_responses:
-                if "tool_calls" in response['message']:
+                if "tool_calls" in response["message"]:
                     response["finish_reason"] = "tool_calls"
         except AttributeError:
             # Not supported
@@ -172,9 +176,6 @@ async def completions_to_openai_response_async(
 
 
 def _fix_response(resp: dict) -> dict:
-    if "content" not in resp:
-        resp["content"] = None
-
     for tool in resp.get("tool_calls", []):
         if "id" not in tool:
             # Tool call should have ID

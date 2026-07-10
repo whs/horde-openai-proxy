@@ -15,12 +15,12 @@
 # From https://github.com/huggingface/transformers/blob/main/tests/utils/test_chat_parsing.py
 
 __all__ = [
-    'cohere_template',
-    'ernie_template',
-    'gemma4_template',
-    'gpt_oss_template',
-    'qwen3_template',
-    'smollm_template',
+    "cohere_template",
+    "ernie_template",
+    "gemma4_template",
+    "gpt_oss_template",
+    "qwen3_template",
+    "smollm_template",
 ]
 
 cohere_template = {
