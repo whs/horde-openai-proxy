@@ -78,6 +78,7 @@ def test_get_chat_models(
             "name": "google/gemma-4-E2B-it",
             "hf_url": ANY,
             "known_to_horde": True,
+            'reference': ANY,
         },
     ]
 

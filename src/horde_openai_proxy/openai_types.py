@@ -117,7 +117,7 @@ class ChatCompletionRequest(BaseModel):
             self.model = ",".join(self.models)
             return self
         if self.model is not None:
-            self.models = self.model.split(",")
+            self.models = [v.strip() for v in self.model.split(",")]
             return self
         raise ValueError("one of model or models must be set")
 
@@ -180,7 +180,7 @@ ChatCompletionAllMessages = Union[
 
 class ChatCompletionMessageTextContent(BaseModel):
     text: str
-    type: Literal["text"]
+    type: Literal["text"] = "text"
 
 
 class ChatCompletionMessageToolCall(BaseModel):
@@ -277,6 +277,8 @@ class ChatCompletionStreamingChunkChoiceDelta(BaseModel):
             self.reasoning_details = [
                 ChatCompletionReasoningDetails(text=self.thinking)
             ]
+        elif isinstance(self.reasoning_details, list) and len(self.reasoning_details) > 0 and self.thinking in (MISSING, None):
+            self.thinking = self.reasoning_details[0].text
         return self
 
 
