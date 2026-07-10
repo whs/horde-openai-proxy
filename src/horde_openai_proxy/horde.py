@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 from json import JSONDecodeError
 from typing import List
@@ -7,7 +8,7 @@ import httpx
 
 from .types import HordeRequest, TextGeneration
 
-HORDE_HOST = "https://stablehorde.net/api/"
+HORDE_HOST = os.getenv("HORDE_HOST", "https://stablehorde.net/api/")
 
 
 def remove_stop_words(text: str, stop_sequence: List[str]) -> str:
