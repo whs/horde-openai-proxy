@@ -142,6 +142,10 @@ async def completions_to_openai_response_async(
                     )
                 )
             ]
+
+            for response in parsed_responses:
+                if "tool_calls" in response['message']:
+                    response["finish_reason"] = "tool_calls"
         except AttributeError:
             # Not supported
             pass
