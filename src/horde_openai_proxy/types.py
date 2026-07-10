@@ -15,6 +15,9 @@ class ModelGenerationInput(BaseModel):
     stop_sequence: List[str] = []
     temperature: Optional[float] = None
     top_p: Optional[float] = None
+    min_p: Optional[float] = None
+    top_a: Optional[float] = None
+    top_k: Optional[int] = None
 
     # Additional formatting options, handled by the proxy. It uses KoboldAI's GUI defaults!
     frmtadsnsp: bool = True

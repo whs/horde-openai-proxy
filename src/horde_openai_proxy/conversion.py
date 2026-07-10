@@ -35,7 +35,7 @@ async def openai_to_horde_async(
     """
     all_stops = set()
     model_names = []
-    for model_name in request.model.split(","):
+    for model_name in cast(list[str], request.models):
         if len(model_names) >= max_models:
             break
 
@@ -64,7 +64,7 @@ async def openai_to_horde_async(
         raise ValueError("All requested models are unknown, offline or unsupported")
 
     # If the last message is assistant, then this is prefill
-    is_prefill = request.messages[-1]["role"] == "assistant"
+    is_prefill = request.messages[-1].role == "assistant"
 
     primary_model = model_names[0]
     primary_model_info = await get_model(primary_model)
@@ -74,8 +74,8 @@ async def openai_to_horde_async(
     prompt = cast(
         str,
         primary_tokenizer.apply_chat_template(
-            request.messages,
-            tools=request.tools,
+            [v.model_dump() for v in request.messages],
+            tools=[v.model_dump() for v in request.tools] if request.tools is not None else None,
             add_generation_prompt=True,
             continue_final_message=is_prefill,
             tokenize=False,
@@ -97,6 +97,9 @@ async def openai_to_horde_async(
             stop_sequence=request.stop + list(all_stops),
             temperature=request.temperature,
             top_p=request.top_p,
+            min_p=request.min_p,
+            top_a=request.top_a,
+            top_k=request.top_k,
         ),
     )
 
