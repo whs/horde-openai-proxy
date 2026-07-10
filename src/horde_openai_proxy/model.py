@@ -8,7 +8,7 @@ from cachetools import TTLCache
 from cachetools_async import cached as cached_async
 
 from .horde import get_horde_models_async
-from .types import HordeModelInfoResponse
+from .types import HordeModelInfoResponse, HordeModelInfo
 
 KNOWN_ENGINES = {"aphrodite", "koboldcpp"}
 QUANTS_RE = re.compile(r"(-)*(([i]*q[1-9](_[k0])*(_[x]*[sml])*)|f[48])(-)*", re.I)
@@ -39,12 +39,12 @@ def estimate_hf_url(
 
     return None
 
-
 @dataclass
 class Model:
     name: str
     hf_url: str
     known_to_horde: bool
+    reference: Optional[HordeModelInfo]
 
 
 def get_references() -> HordeModelInfoResponse:
@@ -94,6 +94,7 @@ async def get_models_async() -> dict[str, Model]:
                     name=name,
                     hf_url=hf_url,
                     known_to_horde=name in references.root,
+                    reference=references.root.get(name),
                 )
     return models
 

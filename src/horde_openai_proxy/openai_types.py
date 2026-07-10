@@ -16,6 +16,7 @@ def ensure_str_or_json(value: Any) -> str:
     except TypeError:
         raise ValueError("value is not serializable")
 
+
 def parse_json(value: Any) -> dict:
     if isinstance(value, str):
         try:
@@ -28,6 +29,7 @@ def parse_json(value: Any) -> dict:
         return value
 
     raise ValueError("Invalid type")
+
 
 class ChatCompletionRequest(BaseModel):
     """An OpenAI Chat Completion request."""
@@ -60,7 +62,7 @@ class ChatCompletionRequest(BaseModel):
     slow_workers: bool = Field(True)
     allow_downgrade: bool = Field(False)
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def check_max_tokens(self) -> Self:
         if self.max_tokens is not None:
             self.max_tokens = self.max_tokens
@@ -73,56 +75,72 @@ class ChatCompletionRequest(BaseModel):
 
         raise ValueError("max_tokens or max_completion_tokens must be set")
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def check_models(self) -> Self:
         if self.models is not None:
-            self.model = ','.join(self.models)
+            self.model = ",".join(self.models)
             return self
         if self.model is not None:
             self.models = self.model.split(",")
             return self
         raise ValueError("one of model or models must be set")
 
+
 class ChatCompletionMessage(BaseModel):
     content: Union[str, list[str], list["ChatCompletionMessageTextContent"]]
     role: str
     name: Optional[str] = None
 
+
 class ChatCompletionUserMessage(ChatCompletionMessage):
     role: Literal["user"] = "user"
+
 
 class ChatCompletionSystemMessage(ChatCompletionMessage):
     role: Literal["system"] = "system"
     content: Union[str, "ChatCompletionMessageTextContent"]
+
 
 class ChatCompletionAssistantMessage(ChatCompletionMessage):
     role: Literal["assistant"] = "assistant"
     reasoning: Optional[str] = None
     tool_calls: Optional[list["ToolCall"]] = None
 
+
 class ChatCompletionToolMessage(ChatCompletionMessage):
     content: Union[str, list[str], list["ChatCompletionMessageTextContent"]]
     role: Literal["tool"] = "tool"
     tool_call_id: str
 
-ChatCompletionAllMessages = Union[ChatCompletionUserMessage, ChatCompletionSystemMessage, ChatCompletionAssistantMessage, ChatCompletionToolMessage]
+
+ChatCompletionAllMessages = Union[
+    ChatCompletionUserMessage,
+    ChatCompletionSystemMessage,
+    ChatCompletionAssistantMessage,
+    ChatCompletionToolMessage,
+]
+
 
 class ChatCompletionMessageTextContent(BaseModel):
     text: str
     type: Literal["text"]
+
 
 class ToolCall(BaseModel):
     id: str
     type: Literal["function"] = "function"
     function: "ToolCallFunction"
 
+
 class ToolCallFunction(BaseModel):
     name: str
     arguments: Annotated[dict, BeforeValidator(parse_json)]
 
+
 class ToolDefinitionFunction(BaseModel):
     type: Literal["function"] = "function"
     function: "ToolDefinitionFunctionDetail"
+
 
 class ToolDefinitionFunctionDetail(BaseModel):
     name: str
@@ -130,7 +148,9 @@ class ToolDefinitionFunctionDetail(BaseModel):
     parameters: dict
     strict: Optional[bool] = None
 
+
 ToolDefinition = Union[ToolDefinitionFunction]
+
 
 class ChatCompletionResponse(BaseModel):
     """An OpenAI Chat Completion response."""

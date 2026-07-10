@@ -48,7 +48,7 @@ async def openai_to_horde_async(
 
         # FIXME: We could get_tokenizer in parallel to speedup lookups, but model_names should be sequential
         try:
-            tokenizer = await asyncio.to_thread(get_tokenizer, model_info.hf_url)
+            tokenizer = await asyncio.to_thread(get_tokenizer, model_info.hf_url, model_info.reference)
         except Exception:  # TODO: Pokemon
             raise ValueError(f"Model {model_name} not known")
 
@@ -69,13 +69,15 @@ async def openai_to_horde_async(
     primary_model = model_names[0]
     primary_model_info = await get_model(primary_model)
     primary_tokenizer = await asyncio.to_thread(
-        get_tokenizer, primary_model_info.hf_url
+        get_tokenizer, primary_model_info.hf_url, primary_model_info.reference
     )
     prompt = cast(
         str,
         primary_tokenizer.apply_chat_template(
             [v.model_dump() for v in request.messages],
-            tools=[v.model_dump() for v in request.tools] if request.tools is not None else None,
+            tools=[v.model_dump() for v in request.tools]
+            if request.tools is not None
+            else None,
             add_generation_prompt=True,
             continue_final_message=is_prefill,
             tokenize=False,
@@ -122,7 +124,7 @@ async def completions_to_openai_response_async(
 
     parsed_responses = None
     if model is not None and model.hf_url is not None:
-        tokenizer = await asyncio.to_thread(get_tokenizer, model.hf_url)
+        tokenizer = await asyncio.to_thread(get_tokenizer, model.hf_url, model.reference)
         prompt_prefix = prompt
         if getattr(tokenizer, "response_template", None) is None:
             prompt_prefix = None
@@ -164,6 +166,7 @@ async def completions_to_openai_response_async(
         },
     )
 
+
 def _fix_response(resp: dict) -> dict:
     if "content" not in resp:
         resp["content"] = None
@@ -174,7 +177,11 @@ def _fix_response(resp: dict) -> dict:
             tool["id"] = str(uuid4())
         if tool.get("type", None) == "function" and "function" in tool:
             # Function arguments must be JSON string and not decoded JSON
-            if "arguments" in tool["function"] and not isinstance(tool["function"]["arguments"], str):
-                tool["function"]["arguments"] = json.dumps(tool["function"]["arguments"])
+            if "arguments" in tool["function"] and not isinstance(
+                tool["function"]["arguments"], str
+            ):
+                tool["function"]["arguments"] = json.dumps(
+                    tool["function"]["arguments"]
+                )
 
     return resp
