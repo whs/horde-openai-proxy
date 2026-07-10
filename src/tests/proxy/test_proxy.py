@@ -78,7 +78,7 @@ def test_get_chat_models(
             "name": "google/gemma-4-E2B-it",
             "hf_url": ANY,
             "known_to_horde": True,
-            'reference': ANY,
+            "reference": ANY,
         },
     ]
 
@@ -138,8 +138,9 @@ def test_post_chat_completion(
     assert data == {
         "created": ANY,
         "id": "test-uuid-123",
-        "usage": {"kudos": 42},
+        "usage": ANY,
         "model": "google/gemma-4-E2B-it",
+        "object": "chat.completion",
         "choices": [
             {
                 "index": 0,
@@ -148,6 +149,12 @@ def test_post_chat_completion(
                     "role": "assistant",
                     "content": "Hello, how can I help you?",
                     "thinking": "Test\n",
+                    "reasoning_details": [
+                        {
+                            "text": "Test\n",
+                            "type": "reasoning.text",
+                        },
+                    ],
                 },
             },
         ],

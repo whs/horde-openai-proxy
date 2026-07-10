@@ -1,6 +1,7 @@
 import enum
 import json
 from typing import Optional, List, Union, Literal, Self, Annotated, Any
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator, BeforeValidator, ConfigDict
 from pydantic_core import MISSING
@@ -140,23 +141,37 @@ class ChatCompletionSystemMessage(ChatCompletionMessage):
 
 class ChatCompletionAssistantMessage(ChatCompletionMessage):
     role: Literal["assistant"] = "assistant"
-    tool_calls: Optional[list["ChatCompletionMessageToolCall"]] = MISSING
+    tool_calls: Optional[list["ChatCompletionMessageToolCall"] | MISSING] = MISSING
 
     # VSCode use this field
-    thinking: Optional[str] = MISSING
+    thinking: Optional[str | MISSING] = MISSING
 
     # OpenRouter use this field
-    reasoning_details: Optional[list["ChatCompletionReasoningDetails"]] = MISSING
+    reasoning_details: Optional[list["ChatCompletionReasoningDetails"] | MISSING] = (
+        MISSING
+    )
 
     @model_validator(mode="after")
     def migrate_thinking_reasoning(self) -> Self:
-        if self.reasoning_details in (None, MISSING) and self.thinking not in (None, MISSING):
+        if self.reasoning_details in (None, MISSING) and self.thinking not in (
+            None,
+            MISSING,
+        ):
             self.reasoning_details = [
                 ChatCompletionReasoningDetails(text=self.thinking)
             ]
-        elif self.thinking in (None, MISSING) and isinstance(self.reasoning_details, list) and len(self.reasoning_details) > 0:
+        elif (
+            self.thinking in (None, MISSING)
+            and isinstance(self.reasoning_details, list)
+            and len(self.reasoning_details) > 0
+        ):
             self.thinking = self.reasoning_details[0].text
         return self
+
+
+class ChatCompletionAssistantResponseMessage(ChatCompletionAssistantMessage):
+    content: Union[str, list[str], list["ChatCompletionMessageTextContent"], MISSING] = MISSING
+    tool_calls: Optional[list["ChatCompletionResponseToolCall"] | MISSING] = MISSING
 
 
 class ChatCompletionReasoningDetails(BaseModel):
@@ -174,6 +189,12 @@ ChatCompletionAllMessages = Union[
     ChatCompletionUserMessage,
     ChatCompletionSystemMessage,
     ChatCompletionAssistantMessage,
+    ChatCompletionToolMessage,
+]
+ChatCompletionAllResponseMessages = Union[
+    ChatCompletionUserMessage,
+    ChatCompletionSystemMessage,
+    ChatCompletionAssistantResponseMessage,
     ChatCompletionToolMessage,
 ]
 
@@ -215,16 +236,31 @@ class ChatCompletionResponse(BaseModel):
     """An OpenAI Chat Completion response."""
 
     id: str
-    choices: list[dict]
+    choices: list["ChatCompletionResponseChoice"]
     created: int
     model: str
-    usage: dict
+    usage: "ChatCompletionUsage"
+    object: Literal["chat.completion"] = "chat.completion"
+
+
+class ChatCompletionResponseChoice(BaseModel):
+    index: int
+    finish_reason: FinishReason = FinishReason.Stop
+    message: ChatCompletionAllResponseMessages
+
+
+class ChatCompletionUsage(BaseModel):
+    completion_tokens: Optional[int]
+    prompt_tokens: Optional[int]
+    total_tokens: Optional[int]
+    cost: Optional[int] = 0
+    kudos: Optional[int | MISSING] = MISSING
 
 
 class ChatCompletionResponseToolCall(BaseModel):
     """Tool call as used in the response body"""
 
-    id: str = ""
+    id: str = Field(default_factory=lambda: str(uuid4()))
     type: Literal["function"] = "function"
     function: "ToolCallFunctionResponse"
 
@@ -240,8 +276,8 @@ class ChatCompletionStreamingChunk(BaseModel):
     created: int
     model: str
     object: Literal["chat.completion.chunk"] = "chat.completion.chunk"
-    usage: Optional[dict] = MISSING
-    error: Optional["ErrorMessage"] = MISSING
+    usage: Optional[ChatCompletionUsage | MISSING] = MISSING
+    error: Optional[Union["ErrorMessage", MISSING]] = MISSING
 
 
 class ErrorMessage(BaseModel):
@@ -254,6 +290,14 @@ class ChatCompletionStreamingChunkChoice(BaseModel):
     finish_reason: FinishReason = FinishReason.Stop
     delta: "ChatCompletionStreamingChunkChoiceDelta"
 
+    @classmethod
+    def from_choice(cls, choice: ChatCompletionResponseChoice) -> Self:
+        return cls(
+            index=choice.index,
+            finish_reason=choice.finish_reason,
+            delta=ChatCompletionStreamingChunkChoiceDelta.from_message(choice.message),
+        )
+
 
 class ChatCompletionStreamingChunkChoiceDelta(BaseModel):
     # TODO: Once ChatCompletionResponse is more established this should use the response model
@@ -263,23 +307,42 @@ class ChatCompletionStreamingChunkChoiceDelta(BaseModel):
         MISSING
     )
     # XXX: The code here is duplicated between request-response model because the response tool call must be in JSON
-    tool_calls: Optional[list[ChatCompletionResponseToolCall]] = MISSING
+    tool_calls: Optional[list[ChatCompletionResponseToolCall] | MISSING] = MISSING
 
     # VSCode use this field
-    thinking: Optional[str] = MISSING
+    thinking: Optional[str | MISSING] = MISSING
 
     # OpenRouter use this field
-    reasoning_details: Optional[list["ChatCompletionReasoningDetails"]] = MISSING
+    reasoning_details: Optional[list["ChatCompletionReasoningDetails"] | MISSING] = (
+        MISSING
+    )
 
     @model_validator(mode="after")
     def migrate_thinking_reasoning(self) -> Self:
-        if self.reasoning_details in (MISSING, None) and self.thinking not in (MISSING, None):
+        if self.reasoning_details in (MISSING, None) and self.thinking not in (
+            MISSING,
+            None,
+        ):
             self.reasoning_details = [
                 ChatCompletionReasoningDetails(text=self.thinking)
             ]
-        elif isinstance(self.reasoning_details, list) and len(self.reasoning_details) > 0 and self.thinking in (MISSING, None):
+        elif (
+            isinstance(self.reasoning_details, list)
+            and len(self.reasoning_details) > 0
+            and self.thinking in (MISSING, None)
+        ):
             self.thinking = self.reasoning_details[0].text
         return self
+
+    @classmethod
+    def from_message(cls, message: ChatCompletionAllResponseMessages) -> Self:
+        return cls(
+            role=message.role,
+            content=message.content,
+            tool_calls=getattr(message, "tool_calls", MISSING),
+            thinking=getattr(message, "thinking", MISSING),
+            reasoning_details=getattr(message, "reasoning_details", MISSING),
+        )
 
 
 class ModelResponse(BaseModel):

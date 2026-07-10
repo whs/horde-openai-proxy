@@ -194,15 +194,10 @@ async def _post_chat_completion_streaming(
         ChatCompletionStreamingChunk(
             id=out.id,
             choices=[
-                ChatCompletionStreamingChunkChoice(
-                    index=choice["index"],
-                    finish_reason=choice["finish_reason"],
-                    delta=ChatCompletionStreamingChunkChoiceDelta.model_validate(
-                        choice["message"]
-                    ),
-                )
+                ChatCompletionStreamingChunkChoice.from_choice(choice)
                 for choice in out.choices
             ],
+            usage=out.usage,
             created=out.created,
             model=out.model,
         ).model_dump_json()
