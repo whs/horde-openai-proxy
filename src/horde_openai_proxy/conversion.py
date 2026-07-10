@@ -1,10 +1,18 @@
 import asyncio
-import json
 import time
 from typing import List, cast, Optional
-from uuid import uuid4
+
+from pydantic_core import MISSING
 
 from .model import get_model
+from .openai_types import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatCompletionUsage,
+    ChatCompletionResponseChoice,
+    FinishReason,
+    ChatCompletionAssistantResponseMessage,
+)
 from .template import (
     get_tokenizer,
 )
@@ -13,7 +21,6 @@ from .types import (
     ModelGenerationInput,
     TextGeneration,
 )
-from .openai_types import ChatCompletionRequest, ChatCompletionResponse
 
 
 def openai_to_horde(*args, **kwargs) -> HordeRequest:
@@ -48,7 +55,9 @@ async def openai_to_horde_async(
 
         # FIXME: We could get_tokenizer in parallel to speedup lookups, but model_names should be sequential
         try:
-            tokenizer = await asyncio.to_thread(get_tokenizer, model_info.hf_url, model_info.reference)
+            tokenizer = await asyncio.to_thread(
+                get_tokenizer, model_info.hf_url, model_info.reference
+            )
         except Exception:  # TODO: Pokemon
             raise ValueError(f"Model {model_name} not known")
 
@@ -123,19 +132,27 @@ async def completions_to_openai_response_async(
     model = await get_model(completions[0].model)
 
     parsed_responses = None
+    prompt_tokens = 0
+    completion_tokens = 0
     if model is not None and model.hf_url is not None:
-        tokenizer = await asyncio.to_thread(get_tokenizer, model.hf_url, model.reference)
+        tokenizer = await asyncio.to_thread(
+            get_tokenizer, model.hf_url, model.reference
+        )
+        completion_tokens = sum([len(tokenizer.encode(c.text)) for c in completions])
+        if prompt is not None:
+            prompt_tokens = len(tokenizer.encode(prompt))
+
         prompt_prefix = prompt
         if getattr(tokenizer, "response_template", None) is None:
             prompt_prefix = None
 
         try:
             parsed_responses = [
-                {
-                    "finish_reason": "stop",
-                    "index": index,
-                    "message": _fix_response(completion),
-                }
+                ChatCompletionResponseChoice(
+                    finish_reason=FinishReason.Stop,
+                    index=index,
+                    message=completion,
+                )
                 for index, completion in enumerate(
                     tokenizer.parse_response(
                         [c.text for c in completions], prefix=prompt_prefix
@@ -144,19 +161,23 @@ async def completions_to_openai_response_async(
             ]
 
             for response in parsed_responses:
-                if "tool_calls" in response['message']:
-                    response["finish_reason"] = "tool_calls"
+                if isinstance(
+                    response.message, ChatCompletionAssistantResponseMessage
+                ) and response.message.tool_calls not in (None, MISSING):
+                    response.finish_reason = FinishReason.ToolCalls
         except AttributeError:
             # Not supported
             pass
 
     if parsed_responses is None:
         parsed_responses = [
-            {
-                "finish_reason": "stop",
-                "index": index,
-                "message": {"role": "assistant", "content": completion.text},
-            }
+            ChatCompletionResponseChoice(
+                finish_reason=FinishReason.Stop,
+                index=index,
+                message=ChatCompletionAssistantResponseMessage(
+                    content=completion.text,
+                ),
+            )
             for index, completion in enumerate(completions)
         ]
 
@@ -165,27 +186,12 @@ async def completions_to_openai_response_async(
         choices=parsed_responses,
         created=int(time.time()),
         model=completions[0].model,
-        usage={
-            "kudos": completions[0].kudos,
-        },
+        usage=ChatCompletionUsage(
+            kudos=completions[0].kudos,
+            prompt_tokens=prompt_tokens if prompt_tokens > 0 else MISSING,
+            completion_tokens=completion_tokens if completion_tokens > 0 else MISSING,
+            total_tokens=prompt_tokens + completion_tokens
+            if prompt_tokens > 0 and completion_tokens > 0
+            else MISSING,
+        ),
     )
-
-
-def _fix_response(resp: dict) -> dict:
-    if "content" not in resp:
-        resp["content"] = None
-
-    for tool in resp.get("tool_calls", []):
-        if "id" not in tool:
-            # Tool call should have ID
-            tool["id"] = str(uuid4())
-        if tool.get("type", None) == "function" and "function" in tool:
-            # Function arguments must be JSON string and not decoded JSON
-            if "arguments" in tool["function"] and not isinstance(
-                tool["function"]["arguments"], str
-            ):
-                tool["function"]["arguments"] = json.dumps(
-                    tool["function"]["arguments"]
-                )
-
-    return resp

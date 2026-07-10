@@ -39,6 +39,7 @@ def estimate_hf_url(
 
     return None
 
+
 @dataclass
 class Model:
     name: str

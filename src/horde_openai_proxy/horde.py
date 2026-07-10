@@ -1,7 +1,8 @@
 import asyncio
 import time
+from dataclasses import dataclass
 from json import JSONDecodeError
-from typing import List
+from typing import List, Optional, Literal, Union
 
 import httpx
 from cachetools import TTLCache
@@ -43,6 +44,20 @@ def get_horde_completion(*args, **kwargs) -> List[TextGeneration]:
     return asyncio.run(get_horde_completion_async(*args, **kwargs))
 
 
+@dataclass
+class ProgressMessageSubmittedJob:
+    uuid: str
+    type: Optional[Literal["submitted-job"]] = "submitted-job"
+
+
+@dataclass
+class ProgressMessagePoll:
+    type: Optional[Literal["poll"]] = "poll"
+
+
+ProgressMessage = Union[ProgressMessageSubmittedJob, ProgressMessagePoll]
+
+
 async def get_horde_completion_async(
     apikey: str,
     request: HordeRequest,
@@ -51,6 +66,7 @@ async def get_horde_completion_async(
     validated_backends: bool = False,
     slow_workers: bool = True,
     allow_downgrade: bool = False,
+    progress: Optional[asyncio.Queue[ProgressMessage]] = None,
 ) -> List[TextGeneration]:
     """
     Request text completions from the StableHorde API and awaits the completions.
@@ -64,6 +80,14 @@ async def get_horde_completion_async(
     :return: List of TextGeneration
     :raises ValueError
     """
+
+    def update_progress(data: ProgressMessage):
+        if progress is not None:
+            try:
+                progress.put_nowait(data)
+            except asyncio.QueueFull:
+                pass
+
     async with httpx.AsyncClient(base_url=HORDE_HOST) as client:
         initial_request = get_data(
             await client.post(
@@ -84,11 +108,13 @@ async def get_horde_completion_async(
         )
 
         uuid = initial_request["id"]
+        update_progress(ProgressMessageSubmittedJob(uuid=uuid))
 
         # Await the completion
         initial_time = time.time()
         while time.time() - initial_time < request.timeout:
             data = get_data(await client.get(f"v2/generate/text/status/{uuid}"))
+            update_progress(ProgressMessagePoll())
 
             if not data["is_possible"]:
                 raise ValueError("Request is not possible.")

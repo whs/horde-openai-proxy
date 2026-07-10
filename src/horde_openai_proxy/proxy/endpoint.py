@@ -1,8 +1,12 @@
 import asyncio
 import logging
-from typing import List
+import time
+from typing import List, AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request
+
+# fastapi.sse is not used because it cannot be used outside response_class
+from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from horde_openai_proxy import (
     ChatCompletionRequest,
@@ -25,6 +29,11 @@ from horde_openai_proxy.openai_types import (
     ModelResponse,
     ModelTopProvider,
     OpenAIModel,
+    ChatCompletionStreamingChunk,
+    ChatCompletionStreamingChunkChoice,
+    FinishReason,
+    ChatCompletionStreamingChunkChoiceDelta,
+    ErrorMessage,
 )
 
 app = FastAPI()
@@ -107,18 +116,30 @@ async def get_chat_models() -> List[Model]:
     return list((await get_models_async()).values())
 
 
-@app.post("/v1/chat/completions")
+@app.post("/v1/chat/completions", response_model=None)
 async def post_chat_completion(
     request: Request, body: ChatCompletionRequest
-) -> ChatCompletionResponse:
+) -> ChatCompletionResponse | EventSourceResponse:
     token = (
         request.headers.get("authorization", "0000000000")
         .lstrip("Bearer ")
         .lstrip("sk-")
     )
 
+    if body.stream:
+        return EventSourceResponse(
+            _post_chat_completion_streaming(request, body, token)
+        )
+    else:
+        return await _post_chat_completion(request, body, token)
+
+
+async def _post_chat_completion(
+    request: Request, body: ChatCompletionRequest, token: str
+) -> ChatCompletionResponse:
     try:
         horde_request = await openai_to_horde_async(body)
+
         completions = await get_horde_completion_async(
             token,
             horde_request,
@@ -132,3 +153,52 @@ async def post_chat_completion(
         raise HTTPException(status_code=406, detail=str(e))
 
     return await completions_to_openai_response_async(completions, horde_request.prompt)
+
+
+async def _post_chat_completion_streaming(
+    request: Request, body: ChatCompletionRequest, token: str
+) -> AsyncGenerator[ServerSentEvent]:
+    try:
+        horde_request = await openai_to_horde_async(body)
+
+        # TODO: Use progress
+        completions = await get_horde_completion_async(
+            token,
+            horde_request,
+            trusted_workers=body.trusted_workers,
+            validated_backends=body.validated_backends,
+            slow_workers=body.slow_workers,
+            allow_downgrade=body.allow_downgrade,
+        )
+    except ValueError as e:
+        logging.warning("Request error", exc_info=e)
+        yield ServerSentEvent(
+            ChatCompletionStreamingChunk(
+                id="",
+                choices=[
+                    ChatCompletionStreamingChunkChoice(
+                        index=0,
+                        finish_reason=FinishReason.Error,
+                        delta=ChatCompletionStreamingChunkChoiceDelta(role="system"),
+                    )
+                ],
+                created=int(time.time()),
+                model=body.model,
+                error=ErrorMessage(message=str(e)),
+            ).model_dump_json()
+        )
+        return
+
+    out = await completions_to_openai_response_async(completions, horde_request.prompt)
+    yield ServerSentEvent(
+        ChatCompletionStreamingChunk(
+            id=out.id,
+            choices=[
+                ChatCompletionStreamingChunkChoice.from_choice(choice)
+                for choice in out.choices
+            ],
+            usage=out.usage,
+            created=out.created,
+            model=out.model,
+        ).model_dump_json()
+    )

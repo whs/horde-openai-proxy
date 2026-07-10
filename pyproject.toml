@@ -25,7 +25,11 @@ dev = [
     "pytest-httpx>=0.30.0",
     "pytest-asyncio>=1.4.0",
 ]
-fastapi = ["uvicorn", "fastapi[standard]"]
+fastapi = [
+    "uvicorn",
+    "fastapi[standard]",
+    "sse-starlette>=3.4.5",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]
